@@ -1,0 +1,6 @@
+{
+  "name": "Switcher: macOS Layout Companion",
+  "description": "Interactive Punto Switcher simulator and layout automation companion for macOS. Auto-detects and converts mistyped text between US English, Russian, and Ukrainian keyboard layouts, manages quick text snippets, and generates ready-to-use native macOS automation scripts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
