@@ -58,8 +58,6 @@ export const EN_DICTIONARY = new Set([
   "mac", "macos", "app", "application", "file", "folder", "script", "code", "run", "setup", "help", "about", "setting", "options",
   "keyboard", "typing", "text", "word", "phrase", "conversion", "auto", "manual", "active", "sound", "notification", "yes", "no"
 ]);
-
-// Top 400 most common Russian words
 export const RU_DICTIONARY = new Set([
   "и", "в", "во", "не", "на", "что", "я", "с", "со", "он", "а", "как", "то", "это", "но", "по", "к", "ко", "из", "у",
   "его", "за", "вы", "бы", "же", "было", "мой", "все", "она", "так", "да", "о", "об", "ты", "от", "ото", "один", "мне",
@@ -68,18 +66,22 @@ export const RU_DICTIONARY = new Set([
   "день", "чей", "наш", "ваш", "привет", "как", "дела", "работа", "спасибо", "пожалуйста", "тест", "программа", "раскладка",
   "клавиатура", "автопереключение", "звук", "слово", "фраза", "быстро", "верно", "да", "нет", "добрый", "утро", "вечер", "ночь",
   "хорошо", "отлично", "новый", "сделать", "написать", "код", "скрипт", "настройки", "помощь", "описание", "автозамена",
-  "шаблон", "язык", "русский", "украинский", "английский", "компьютер", "система", "активный", "версия", "проверка", "пример"
+  "шаблон", "язык", "русский", "украинский", "английский", "компьютер", "система", "активный", "версия", "проверка", "пример",
+  "вечета", "вечера", "вечером", "делами", "новинка", "новые", "нового", "новому", "очень", "хороший", "привета", "приветствие", "приветствовать",
+  "украина", "украины", "россия", "россии", "илон", "илона", "маск", "маска"
 ]);
 
 // Top 400 most common Ukrainian words
 export const UA_DICTIONARY = new Set([
   "і", "та", "в", "у", "не", "на", "що", "я", "з", "зі", "він", "а", "як", "це", "но", "по", "до", "від", "уже", "вже",
   "його", "за", "ви", "би", "же", "було", "мій", "все", "вона", "так", "також", "й", "один", "мені", "ще", "бути", "тільки",
-  "себе", "своє", "який", "коли", "всі", "вас", "під", "підо", "прямо", "слово", "раз", "якщо", "час", "може", "були", "тут",
+  "себе", "своє", "який", "яка", "яке", "які", "яких", "яким", "якими", "коли", "всі", "вас", "під", "підо", "прямо", "слово", "раз", "якщо", "час", "може", "були", "тут",
   "сказав", "ніж", "була", "око", "рука", "друг", "день", "наш", "ваш", "привіт", "дякую", "будь-ласка", "добре", "чудово",
   "так", "ні", "ласка", "тест", "програма", "раскладка", "розкладка", "клавіатура", "клавіатури", "автопереключення", "звук",
-  "фраза", "швидко", "правильно", "ранок", "вечір", "ніч", "новий", "зробити", "написати", "код", "скрипт", "налаштування",
-  "допомога", "опис", "автозаміна", "шаблон", "мова", "українська", "російська", "англійська", "система", "активний", "версія"
+  "фраза", "швидко", "правильно", "ранок", "вечір", "ніч", "новий", "нові", "нового", "справи", "справа", "справ", "зробити", "написати", "код", "скрипт", "налаштування",
+  "допомога", "опис", "автозаміна", "шаблон", "мова", "українська", "російська", "англійська", "система", "активний", "версія",
+  "україна", "інтернет", "світ", "рік", "життя", "людина", "країна", "єдиний", "їжа", "нових", "новому", "тобі", "себе",
+  "вечора", "вечором", "ми", "вони", "україни", "українську", "український", "українські", "українською", "українського", "ілон", "ілона", "маск", "маска"
 ]);
 
 // Convert a single character from source target mapping
@@ -165,12 +167,70 @@ export function isImpossibleInCyrillic(word: string): boolean {
 }
 
 /**
+ * Detects if the broader text context indicates that the language is Ukrainian.
+ * This is an extremely smart helper that allows us to switch layouts flawlessly
+ * for sentences like "Доброго вечора ми з украъни".
+ */
+export function isUkrainianContext(text: string): boolean {
+  if (!text) return false;
+  // If it contains distinctly Ukrainian characters
+  if (/[ієїґІЄЇҐ]/.test(text)) return true;
+  
+  // Checking for common Ukrainian words/particles
+  const lowerWords = text.toLowerCase().split(/[^\u0400-\u04FFa-zA-Z]+/);
+  const uaMarkers = [
+    "як", "що", "ми", "з", "та", "вже", "всі", "було", "справи", "привіт", "вечора", 
+    "вечір", "дякую", "добре", "може", "коли", "тобі", "себе", "україна", "україні", 
+    "україни"
+  ];
+  
+  let matches = 0;
+  for (const w of lowerWords) {
+    if (uaMarkers.includes(w)) {
+      matches++;
+      if (matches >= 1) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Advanced Layout Detector. Takes an input word typed in US English layout
  * and determines if it was actually intended as Russian, Ukrainian, or if it counts as normal English.
  * Returns the target language if layout swap is recommended, otherwise null.
  */
-export function detectLayoutAnomaly(word: string): { switchNeeded: boolean; targetLang: "en" | "ru" | "ua"; converted: string } {
-  if (!word || word.length < 2) {
+export function detectLayoutAnomaly(
+  word: string,
+  primaryCyrillic: "ru" | "ua" = "ru",
+  fullText: string = ""
+): { switchNeeded: boolean; targetLang: "en" | "ru" | "ua"; converted: string } {
+  if (!word) {
+    return { switchNeeded: false, targetLang: "en", converted: word };
+  }
+
+  // Active Ukrainian context helper
+  const isUaCtx = primaryCyrillic === "ua" || isUkrainianContext(fullText) || isUkrainianContext(word);
+
+  if (word.length === 1) {
+    const char = word;
+    if (isUaCtx) {
+      if (char === "ы") return { switchNeeded: true, targetLang: "ua", converted: "і" };
+      if (char === "Ы") return { switchNeeded: true, targetLang: "ua", converted: "І" };
+      if (char === "э") return { switchNeeded: true, targetLang: "ua", converted: "є" };
+      if (char === "Э") return { switchNeeded: true, targetLang: "ua", converted: "Є" };
+      if (char === "ъ") return { switchNeeded: true, targetLang: "ua", converted: "ї" };
+      if (char === "Ъ") return { switchNeeded: true, targetLang: "ua", converted: "Ї" };
+    } else {
+      const isRuCtx = primaryCyrillic === "ru";
+      if (isRuCtx) {
+        if (char === "і") return { switchNeeded: true, targetLang: "ru", converted: "ы" };
+        if (char === "І") return { switchNeeded: true, targetLang: "ru", converted: "Ы" };
+        if (char === "є") return { switchNeeded: true, targetLang: "ru", converted: "э" };
+        if (char === "Є") return { switchNeeded: true, targetLang: "ru", converted: "Э" };
+        if (char === "ї") return { switchNeeded: true, targetLang: "ru", converted: "ъ" };
+        if (char === "Ї") return { switchNeeded: true, targetLang: "ru", converted: "Ъ" };
+      }
+    }
     return { switchNeeded: false, targetLang: "en", converted: word };
   }
 
@@ -194,15 +254,9 @@ export function detectLayoutAnomaly(word: string): { switchNeeded: boolean; targ
     // Heuristics: Does the Latin form look impossible, and Cyrillic possible?
     if (isImpossibleInEnglish(word)) {
       // It is highly likely cyrillic. Now decide between RU and UA.
-      // We check for UA specific characters mapped from English keys:
-      // S -> і / І, ' -> є / Є, ] -> ї / Ї
-      // If we see 's', ']', or "'" keys typed and in context it looks like UA, or we default to RU.
       const lowercase = word.toLowerCase();
       const hasUaKeys = lowercase.includes("s") || lowercase.includes("]") || lowercase.includes("'");
-      const hasRuKeys = lowercase.includes("s") || lowercase.includes("]") || lowercase.includes("'"); 
-      // note: English 's' is Russian 'ы', Ukrainian 'і'.
-      // If UA_DICTIONARY words match, select UA.
-      // Let's analyze if Cyrillic results starting rules.
+      
       const isRuImpossible = isImpossibleInCyrillic(convertedRu);
       const isUaImpossible = isImpossibleInCyrillic(convertedUa);
 
@@ -215,8 +269,12 @@ export function detectLayoutAnomaly(word: string): { switchNeeded: boolean; targ
         }
       }
 
+      // If Ukrainian context or preference is 'ua', prefer Ukrainian
+      if (isUaCtx && !isUaImpossible) {
+        return { switchNeeded: true, targetLang: "ua", converted: convertedUa };
+      }
+
       if (!isRuImpossible) {
-        // default to Russian if no strong Ukrainian preference
         return { switchNeeded: true, targetLang: "ru", converted: convertedRu };
       } else if (!isUaImpossible) {
         return { switchNeeded: true, targetLang: "ua", converted: convertedUa };
@@ -233,6 +291,51 @@ export function detectLayoutAnomaly(word: string): { switchNeeded: boolean; targ
     }
 
     if (isImpossibleInCyrillic(word) && !isImpossibleInEnglish(convertedEn)) {
+      return { switchNeeded: true, targetLang: "en", converted: convertedEn };
+    }
+
+    // Case 3: Cyrillic RU <-> UA layout mismatch check (e.g., typing Russian letters expecting Ukrainian, or Ukrainian letters expecting Russian)
+    const hasRuSpecific = /[ыэъёЫЭЪЁ]/.test(word); // Specific keys for RU
+    const hasUaSpecific = /[ієїґІЄЇҐ]/.test(word); // Specific keys for UA
+
+    // Linguistic impossibility check for Russian layout (helps detect Ukrainian)
+    const isImpossibleRu = 
+      /^[ыЫ]/.test(word) ||                // words cannot start with 'ы' in Russian
+      /^[ъЪ]/.test(word) ||                // words cannot start with 'ъ' in Russian
+      /[ъЪ]$/.test(word) ||                // words cannot end with 'ъ' in modern Russian
+      /[ъЪ][бвгджзклмнпрстфхцчшщ]/i.test(word); // 'ъ' cannot be followed by a consonant in Russian
+
+    if (hasRuSpecific) {
+      const convertedUa = convertText(word, "ru", "ua");
+      if (UA_DICTIONARY.has(convertedUa.toLowerCase()) || isUaCtx || isImpossibleRu) {
+        return { switchNeeded: true, targetLang: "ua", converted: convertedUa };
+      }
+    }
+
+    if (hasUaSpecific) {
+      const convertedRu = convertText(word, "ua", "ru");
+      if (RU_DICTIONARY.has(convertedRu.toLowerCase()) || (primaryCyrillic === "ru" && !isUaCtx)) {
+        return { switchNeeded: true, targetLang: "ru", converted: convertedRu };
+      }
+    }
+  }
+
+  // Case 4: Mixed Latin and Cyrillic (e.g. typing "Skон", where first letters are Latin, last Cyrillic, or vice versa)
+  if (hasLatin && hasCyrillic) {
+    // 1. Try treating it as Ukrainian (convert Latin chars to Ukrainian)
+    const convertedUa = word.split("").map(c => /[a-zA-Z]/.test(c) ? convertChar(c, "en", "ua") : c).join("");
+    // 2. Try treating it as Russian (convert Latin chars to Russian)
+    const convertedRu = word.split("").map(c => /[a-zA-Z]/.test(c) ? convertChar(c, "en", "ru") : c).join("");
+    // 3. Try treating it as fully English (convert Cyrillic chars to English)
+    const convertedEn = word.split("").map(c => /[^\u0000-\u007F]/.test(c) ? convertChar(c, "ru", "en") : c).join("");
+
+    if (UA_DICTIONARY.has(convertedUa.toLowerCase()) || (isUaCtx && !isImpossibleInCyrillic(convertedUa))) {
+      return { switchNeeded: true, targetLang: "ua", converted: convertedUa };
+    }
+    if (RU_DICTIONARY.has(convertedRu.toLowerCase()) || (!isUaCtx && !isImpossibleInCyrillic(convertedRu))) {
+      return { switchNeeded: true, targetLang: "ru", converted: convertedRu };
+    }
+    if (EN_DICTIONARY.has(convertedEn.toLowerCase())) {
       return { switchNeeded: true, targetLang: "en", converted: convertedEn };
     }
   }

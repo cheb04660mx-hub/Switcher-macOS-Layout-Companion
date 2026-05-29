@@ -197,21 +197,15 @@ export default function App() {
         }
 
         // Layout anomaly detection
-        const analysis = detectLayoutAnomaly(item);
+        const analysis = detectLayoutAnomaly(item, primaryCyrillic, val);
         if (analysis.switchNeeded) {
-          // If the model suggests 'ru' or 'ua' layout, let's look at the primary cyrillic pref
-          let target = analysis.targetLang;
-          if (target === "ru" && primaryCyrillic === "ua") {
-            // Re-convert to Ukrainian mapping to respect user preference
-            target = "ua";
-          }
-          const fullyConverted = convertText(item, "en", target);
+          const fullyConverted = analysis.converted;
           
           words[i] = fullyConverted;
           changed = true;
           
           const langNames = { en: "English 🇺🇸", ru: "Russian 🇷🇺", ua: "Ukrainian 🇺🇦" };
-          addNotification(`Автоматически исправлено на ${langNames[target]}: "${fullyConverted}"`);
+          addNotification(`Автоматически исправлено на ${langNames[analysis.targetLang]}: "${fullyConverted}"`);
           break; // process one change per cycle to be resilient
         }
       }
@@ -447,17 +441,73 @@ with keyboard.Listener(on_press=on_press) as listener:
 `;
   };
 
-  const copyScriptToClipboard = (type: "lua" | "py") => {
-    const text = type === "lua" ? generateHammerspoonScript() : generatePythonScript();
+  const generateShellScript = (): string => {
+    const luaContent = generateHammerspoonScript();
+    return `#!/bin/bash
+# =========================================================================
+# AUTO-INSTALLER FOR MACOS SWITCHER (HAMMERSPOON COMPANION)
+# =========================================================================
+
+echo "🍏 Запуск автоматической установки Switcher для macOS..."
+
+# Проверка наличия Hammerspoon
+if [ ! -d "/Applications/Hammerspoon.app" ]; then
+    echo "⚠️ Hammerspoon не обнаружен в /Applications."
+    if command -v brew &> /dev/null; then
+        echo "🍺 Установка Hammerspoon через Homebrew..."
+        brew install --cask hammerspoon
+    else
+        echo "🌐 Скачайте Hammerspoon вручную по адресу https://www.hammerspoon.org/ или установите Homebrew"
+        open "https://www.hammerspoon.org/"
+        echo "После запуска Hammerspoon запустите этот скрипт повторно."
+        exit 1
+    fi
+else
+    echo "✅ Приложение Hammerspoon уже установлено!"
+fi
+
+# Создание папки ~/.hammerspoon
+echo "📂 Создание директории ~/.hammerspoon..."
+mkdir -p ~/.hammerspoon
+
+# Запись конфигурации
+echo "📝 Запись конфигурации в ~/.hammerspoon/init.lua..."
+cat << 'EOF' > ~/.hammerspoon/init.lua
+${luaContent}
+EOF
+
+echo "✨ Установка завершена успешно!"
+echo "👉 Шаги для старта:"
+echo "1. Откройте приложение 'Hammerspoon' (найдите в Spotlight или в папке Программы)."
+echo "2. Предоставьте Hammerspoon права Универсального доступа (Accessibility) в Настройках Системы."
+echo "3. В верхнем меню нажмите на значок Hammerspoon ➜ 'Reload Config' или запустите его."
+echo "4. Попробуйте набрать в любом редакторе: ghbdtn (должно исправиться на 'Привет')."
+`;
+  };
+
+  const copyScriptToClipboard = (type: "lua" | "py" | "sh") => {
+    const text = type === "lua" 
+      ? generateHammerspoonScript() 
+      : type === "py" 
+        ? generatePythonScript() 
+        : generateShellScript();
     navigator.clipboard.writeText(text);
     setCopiedSnippetId(type);
-    addNotification(`Скрипт (${type === "lua" ? "Hammerspoon" : "Python"}) скопирован в буфер!`);
+    addNotification(`Скрипт (${type === "lua" ? "Hammerspoon" : type === "py" ? "Python" : "Setup Bash"}) скопирован в буфер!`);
     setTimeout(() => setCopiedSnippetId(null), 2500);
   };
 
-  const downloadScriptFile = (type: "lua" | "py") => {
-    const text = type === "lua" ? generateHammerspoonScript() : generatePythonScript();
-    const filename = type === "lua" ? "init.lua" : "switcher_companion.py";
+  const downloadScriptFile = (type: "lua" | "py" | "sh") => {
+    const text = type === "lua" 
+      ? generateHammerspoonScript() 
+      : type === "py" 
+        ? generatePythonScript() 
+        : generateShellScript();
+    const filename = type === "lua" 
+      ? "init.lua" 
+      : type === "py" 
+        ? "switcher_companion.py" 
+        : "install_switcher.sh";
     const element = document.createElement("a");
     const file = new Blob([text], {type: 'text/plain'});
     element.href = URL.createObjectURL(file);
@@ -1164,6 +1214,53 @@ with keyboard.Listener(on_press=on_press) as listener:
                     </div>
                   </div>
 
+                </div>
+
+                {/* One-click Installer Action Card */}
+                <div id="setup-automation-card" className="bg-gradient-to-r from-blue-900/40 to-emerald-900/30 border border-blue-800/60 rounded-xl p-5 space-y-4 shadow-xl">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="space-y-1">
+                      <h3 className="text-sm font-bold text-neutral-100 flex items-center space-x-2">
+                        <Sparkles className="w-4 h-4 text-amber-400" />
+                        <span>Автоматическая сборка и инсталлятор для macOS (install_switcher.sh)</span>
+                      </h3>
+                      <p className="text-xs text-neutral-300">
+                        Мы скомпоновали готовый Bash-инсталлятор, который сам установит Hammerspoon через Homebrew (если нужно), создаст правильные папки на вашем Mac и запишет туда ваши сниппеты.
+                      </p>
+                    </div>
+                    <div className="flex space-x-2 shrink-0">
+                      <button 
+                        onClick={() => copyScriptToClipboard("sh")}
+                        className="bg-neutral-800 hover:bg-neutral-700 text-neutral-200 text-xs font-semibold px-4 py-2.5 rounded-lg transition-all flex items-center space-x-2"
+                      >
+                        {copiedSnippetId === "sh" ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>Копировать код</span>
+                      </button>
+                      <button 
+                        onClick={() => downloadScriptFile("sh")}
+                        className="bg-gradient-to-r from-blue-600 to-emerald-600 hover:opacity-90 text-white text-xs font-semibold px-4 py-2.5 rounded-lg transition-all flex items-center space-x-2 shadow"
+                      >
+                        <Laptop className="w-3.5 h-3.5" />
+                        <span>Скачать .sh инсталлятор</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-black/50 rounded-lg p-3 text-[11px] font-mono border border-neutral-800 text-neutral-400">
+                    <span className="text-yellow-400">🚀 Запустить на Mac в один клик через Терминал:</span>
+                    <div className="mt-2 bg-neutral-950 p-2.5 rounded border border-neutral-800 flex items-center justify-between text-neutral-200">
+                      <code className="text-[10px] break-all select-all">cd ~/Downloads && chmod +x install_switcher.sh && ./install_switcher.sh</code>
+                      <button 
+                        onClick={() => {
+                          navigator.clipboard.writeText("cd ~/Downloads && chmod +x install_switcher.sh && ./install_switcher.sh");
+                          addNotification("Команда запуска скопирована в буфер!");
+                        }}
+                        className="text-[10px] text-blue-400 hover:text-blue-300 font-sans font-medium hover:underline shrink-0 pl-2"
+                      >
+                        Скопировать
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Unified Terminal installation command guide box */}
